@@ -13,7 +13,7 @@ import {
  */
 export const stasiunSako = pgTable("stasiun_sako", {
   id: serial("id").primaryKey(),
-  location: varchar("location", { length: 255 }).notNull(),
+  location: varchar("location", { length: 255 }).notNull().unique(),
   pm25: real("pm25").notNull(),
   pm10: real("pm10").notNull(),
   co: real("co").notNull(),

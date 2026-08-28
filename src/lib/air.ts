@@ -143,3 +143,85 @@ export function comfortLabel(score: number): { text: string; color: string } {
   if (score >= 50) return { text: "Cukup Nyaman", color: "text-yellow-600" };
   return { text: "Kurang Nyaman", color: "text-orange-600" };
 }
+
+/**
+ * ISPU (Indeks Standar Pencemar Udara) — berdasarkan rumus interpolasi
+ * linear standar AQI/indonesia. ISPU = sub-index tertinggi dari semua
+ * polutan yang tersedia. Nilai keluaran berada pada rentang 0–500.
+ */
+export type Pollutant = "pm25" | "pm10" | "so2" | "co";
+
+/** Breakpoint tiap polutan: { lo, hi, aqiLow, aqiHigh }. */
+const AQI_BREAKPOINTS: Record<Pollutant, number[][]> = {
+  pm25: [
+    [0, 12, 0, 50],
+    [12.1, 35.4, 51, 100],
+    [35.5, 55.4, 101, 150],
+    [55.5, 150.4, 151, 200],
+    [150.5, 250.4, 201, 300],
+    [250.5, 350.4, 301, 400],
+    [350.5, 500.4, 401, 500],
+  ],
+  pm10: [
+    [0, 54, 0, 50],
+    [55, 154, 51, 100],
+    [155, 254, 101, 150],
+    [255, 354, 151, 200],
+    [355, 424, 201, 300],
+    [425, 504, 301, 400],
+    [505, 604, 401, 500],
+  ],
+  so2: [
+    [0, 35, 0, 50],
+    [36, 75, 51, 100],
+    [76, 185, 101, 150],
+    [186, 304, 151, 200],
+    [305, 604, 201, 300],
+    [605, 804, 301, 400],
+    [805, 1004, 401, 500],
+  ],
+  co: [
+    [0, 4.4, 0, 50],
+    [4.5, 9.4, 51, 100],
+    [9.5, 12.4, 101, 150],
+    [12.5, 15.4, 151, 200],
+    [15.5, 30.4, 201, 300],
+    [30.5, 40.4, 301, 400],
+    [40.5, 50.4, 401, 500],
+  ],
+};
+
+/** Sub-index ISPU dari satu polutan (interpolasi linear). > 500 → 500. */
+export function ispuFrom(value: number, pollutant: Pollutant): number {
+  if (!Number.isFinite(value) || value < 0) return 0;
+  const table = AQI_BREAKPOINTS[pollutant];
+  const last = table[table.length - 1];
+  if (value >= last[1]) return 500;
+  for (const [lo, hi, aqiLow, aqiHigh] of table) {
+    if (value <= hi) {
+      if (hi === lo) return aqiLow;
+      return Math.round(
+        aqiLow + ((aqiHigh - aqiLow) / (hi - lo)) * (value - lo)
+      );
+    }
+  }
+  return 500;
+}
+
+export interface IspuInput {
+  pm25?: number;
+  pm10?: number;
+  so2?: number;
+  co?: number;
+}
+
+/** ISPU akhir = sub-index tertinggi dari polutan yang tersedia. */
+export function computeIspu(readings: IspuInput): number {
+  const subs = [
+    readings.pm25 != null ? ispuFrom(readings.pm25, "pm25") : 0,
+    readings.pm10 != null ? ispuFrom(readings.pm10, "pm10") : 0,
+    readings.so2 != null ? ispuFrom(readings.so2, "so2") : 0,
+    readings.co != null ? ispuFrom(readings.co, "co") : 0,
+  ];
+  return Math.max(...subs);
+}

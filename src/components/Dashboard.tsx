@@ -41,6 +41,32 @@ export default function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
 
+  const applyStations = useCallback((raw: Array<Station | Record<string, unknown>>) => {
+    const data: Station[] = raw.map((d) => ({
+      ...(d as Station),
+      pm25: Number((d as Record<string, unknown>).pm25),
+      pm10: Number((d as Record<string, unknown>).pm10),
+      co: Number((d as Record<string, unknown>).co),
+      so2: Number((d as Record<string, unknown>).so2),
+      ispu: Number((d as Record<string, unknown>).ispu),
+      temperature: Number((d as Record<string, unknown>).temperature),
+      humidity: Number((d as Record<string, unknown>).humidity),
+    }));
+    // pilih stasiun dengan ISPU tertinggi sebagai representatif Sako
+    const worst = data.length
+      ? data.reduce((a, b) => (b.ispu > a.ispu ? b : a))
+      : null;
+    setStations(data);
+    setSelected(worst);
+    setLastUpdate(
+      new Date().toLocaleTimeString("id-ID", {
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+      })
+    );
+  }, []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -48,44 +74,40 @@ export default function Dashboard() {
       if (!res.ok) throw new Error();
       const json = await res.json();
       if (!json.ok) throw new Error(json.error);
-      const data: Station[] = json.data.map((d: Record<string, unknown>) => ({
-        ...d,
-        pm25: Number(d.pm25),
-        pm10: Number(d.pm10),
-        co: Number(d.co),
-        so2: Number(d.so2),
-        ispu: Number(d.ispu),
-        temperature: Number(d.temperature),
-        humidity: Number(d.humidity),
-      }));
-      // pilih stasiun dengan ISPU tertinggi sebagai representatif Sako
-      const worst = data.length
-        ? data.reduce((a, b) => (b.ispu > a.ispu ? b : a))
-        : null;
-      setStations(data);
-      setSelected(worst);
-      setLastUpdate(
-        new Date().toLocaleTimeString("id-ID", {
-          hour: "2-digit",
-          minute: "2-digit",
-          second: "2-digit",
-        })
-      );
+      applyStations(json.data);
       setError(null);
     } catch {
       setError("Gagal memuat data real-time. Periksa koneksi database.");
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [applyStations]);
 
   useEffect(() => {
     void (async () => {
       await load();
     })();
-    const t = setInterval(load, 60_000); // refresh tiap menit
-    return () => clearInterval(t);
-  }, [load]);
+    const t = setInterval(load, 60_000); // fallback polling tiap menit
+    const es = new EventSource("/api/air-quality/stream");
+    es.onmessage = (e) => {
+      let parsed: { ok?: boolean; data?: Array<Station> };
+      try {
+        parsed = JSON.parse(e.data);
+      } catch {
+        return;
+      }
+      if (parsed.ok && parsed.data) {
+        applyStations(parsed.data);
+        setError(null);
+      }
+    };
+    // EventSource auto-reconnect; polling fallback tetap jalan bila stream putus.
+    es.onerror = () => {};
+    return () => {
+      clearInterval(t);
+      es.close();
+    };
+  }, [load, applyStations]);
 
   if (loading && !selected) {
     return (

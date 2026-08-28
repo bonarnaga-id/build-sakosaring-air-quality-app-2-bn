@@ -32,9 +32,10 @@ export function proxy(_request: NextRequest) {
 export const config = {
   matcher: [
     /*
-     * Jalankan keamanan global di semua jalur kecuali aset statis,
-     * gambar optimasi, dan favicon (yang tidak perlu CSP berulang).
+     * Jalankan header keamanan global DI HALAMAN (HTML), bukan di /api
+     * (route handler API sudah menetapkan header keamanannya masing-masing,
+     * dan meng-Exclude api agar body POST tidak terganggu oleh proxy).
      */
-    "/((?!_next/static|_next/image|favicon.ico).*)",
+    "/((?!api|_next/static|_next/image|favicon.ico).*)",
   ],
 };

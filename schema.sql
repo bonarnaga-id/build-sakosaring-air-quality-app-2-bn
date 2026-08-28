@@ -14,16 +14,16 @@
 -- 1) Tabel stasiun pemantauan kualitas udara
 CREATE TABLE IF NOT EXISTS stasiun_sako (
     id            SERIAL PRIMARY KEY,
-    location      VARCHAR(255) NOT NULL,        -- Nama lokasi stasiun
-    pm25          REAL NOT NULL,                -- PM2.5 (µg/m³)
-    pm10          REAL NOT NULL,                -- PM10 (µg/m³)
-    co            REAL NOT NULL,                -- Karbon monoksida (ppm)
-    so2           REAL NOT NULL,                -- Sulfur dioksida (ppb)
-    ispu          INTEGER NOT NULL,             -- Indeks Standar Pencemar Udara
+    location      VARCHAR(255) NOT NULL UNIQUE,        -- Nama lokasi stasiun (1 baris = latest per lokasi)
+    pm25          REAL NOT NULL,                   -- PM2.5 (µg/m³)
+    pm10          REAL NOT NULL,                   -- PM10 (µg/m³)
+    co            REAL NOT NULL,                   -- Karbon monoksida (ppm)
+    so2           REAL NOT NULL,                   -- Sulfur dioksida (ppb)
+    ispu          INTEGER NOT NULL,                -- Indeks Standar Pencemar Udara
     comfort_index REAL NOT NULL DEFAULT 0,      -- Indeks kenyamanan (0-100)
     status        VARCHAR(40) NOT NULL,         -- Baik / Sedang / Tidak Sehat, dll.
-    temperature   REAL NOT NULL,                -- Suhu (°C)
-    humidity      REAL NOT NULL,                -- Kelembaban (%)
+    temperature   REAL NOT NULL,                   -- Suhu (°C)
+    humidity      REAL NOT NULL,                   -- Kelembaban (%)
     recorded_at   TIMESTAMP DEFAULT NOW()       -- Waktu pencatatan
 );
 
