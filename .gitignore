@@ -1,0 +1,15 @@
+# Dependencies
+node_modules/
+
+# Build output
+.next/
+out/
+
+# Environment / secrets — never commit
+.env
+.env.local
+.env.*.local
+
+# OS / tooling
+.DS_Store
+*.log

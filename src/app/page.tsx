@@ -61,13 +61,13 @@ function Header() {
     <header className="sticky top-0 z-40 border-b border-slate-100 bg-white/80 backdrop-blur">
       <div className="mx-auto flex max-w-5xl items-center justify-between px-4 py-3 sm:px-6">
         {/* Logo placeholder */}
-        <a href="#" className="flex items-center gap-2.5">
-          {/* eslint-disable-next-line @next/next/no-img-element */}
-          <img
-            src="/images/logo.png"
-            alt="Logo SakoSaring"
-            className="h-11 w-11 rounded-xl object-cover shadow-sm ring-1 ring-emerald-500/20"
-          />
+          <a href="#" className="flex items-center gap-2.5">
+            {/* eslint-disable-next-line @next/next/no-img-element */}
+            <img
+              src="/images/logo.svg"
+              alt="Logo SakoSaring"
+              className="h-11 w-11 rounded-xl object-cover shadow-sm ring-1 ring-emerald-500/20"
+            />
           <span className="leading-tight">
             <span className="block text-base font-extrabold text-slate-900">
               Sako<span className="text-emerald-600">Saring</span>

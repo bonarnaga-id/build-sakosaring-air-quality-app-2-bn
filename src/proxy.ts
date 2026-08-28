@@ -1,16 +1,22 @@
 import { NextResponse, type NextRequest } from "next/server";
 
 /**
- * Proxy keamanan global (Next.js 16 "proxy" convention):
- * Header keamanan dasar + proteksi XSS/clickjacking.
+ * Proxy keamanan global (Next.js 16 "proxy" file convention).
+ * Diterapkan ke SEMUA route (HTML + API) kecuali aset statis, untuk
+ * header keamanan dasar + perlindungan XSS/clickjacking.
+ *
+ * Note: route handler API juga menetapkan header keamanannya masing-masing
+ * (yang akan mengganti duplikat pada key yang sama).
  */
 export function proxy(_request: NextRequest) {
   const response = NextResponse.next();
 
-  response.headers.set("Content-Security-Policy",
+  response.headers.set(
+    "Content-Security-Policy",
     "default-src 'self'; script-src 'self' 'unsafe-inline'; " +
-    "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
-    "font-src 'self' data:; connect-src 'self'; frame-ancestors 'none';");
+      "style-src 'self' 'unsafe-inline'; img-src 'self' data: blob:; " +
+      "font-src 'self' data:; connect-src 'self'; frame-ancestors 'none';"
+  );
   response.headers.set("X-Content-Type-Options", "nosniff");
   response.headers.set("X-Frame-Options", "DENY");
   response.headers.set("Referrer-Policy", "strict-origin-when-cross-origin");
@@ -24,5 +30,11 @@ export function proxy(_request: NextRequest) {
 }
 
 export const config = {
-  matcher: "/(.*)",
+  matcher: [
+    /*
+     * Jalankan keamanan global di semua jalur kecuali aset statis,
+     * gambar optimasi, dan favicon (yang tidak perlu CSP berulang).
+     */
+    "/((?!_next/static|_next/image|favicon.ico).*)",
+  ],
 };

@@ -80,7 +80,9 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
-    load();
+    void (async () => {
+      await load();
+    })();
     const t = setInterval(load, 60_000); // refresh tiap menit
     return () => clearInterval(t);
   }, [load]);

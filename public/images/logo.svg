@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="SakoSaring logo">
+  <defs>
+    <linearGradient id="sakoGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0e9aa7" />
+      <stop offset="100%" stop-color="#1ca973" />
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="26" fill="url(#sakoGrad)" />
+  <path fill="#fff" d="M64 20 82 58 H46l18-38Z" />
+  <path fill="#fff" d="M64 92 C44 84 44 68 54 58 C60 52 68 50 80 54 C90 57 96 66 90 76 C84 86 70 90 64 92Z" />
+  <circle cx="64" cy="72" r="10" fill="#e5e7eb" />
+</svg>
