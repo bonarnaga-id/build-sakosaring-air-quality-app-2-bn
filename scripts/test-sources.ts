@@ -25,7 +25,10 @@ async function main() {
     if (!cams.length) console.log("  (tidak ada data)");
     for (const c of cams) {
       console.log(
-        `  ${c.location} | PM2.5 ${c.pm25} | PM10 ${c.pm10} | CO ${c.co.toFixed(2)} ppm | SO2 ${c.so2.toFixed(1)} ppb | ISPU ${c.ispu} | ${c.status}`
+        `  ${c.location} | PM2.5 ${c.pm25} | PM10 ${c.pm10 ?? "—"} | ` +
+          `CO ${c.co != null ? c.co.toFixed(2) : "—"} ppm | ` +
+          `SO2 ${c.so2 != null ? c.so2.toFixed(1) : "—"} ppb | ` +
+          `ISPU ${c.ispu} | ${c.status}`
       );
     }
   } catch (e) {

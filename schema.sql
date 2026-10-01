@@ -20,9 +20,9 @@ CREATE TABLE IF NOT EXISTS stasiun_sako (
     id            SERIAL PRIMARY KEY,
     location      VARCHAR(255) NOT NULL UNIQUE,        -- Nama lokasi stasiun (1 baris = latest per lokasi)
     pm25          REAL NOT NULL,                   -- PM2.5 (µg/m³)
-    pm10          REAL NOT NULL,                   -- PM10 (µg/m³)
-    co            REAL NOT NULL,                   -- Karbon monoksida (ppm)
-    so2           REAL NOT NULL,                   -- Sulfur dioksida (ppb)
+    pm10          REAL,                        -- PM10 (µg/m³); NULL bila tidak diukur sumber
+    co            REAL,                        -- Karbon monoksida (ppm); NULL bila tidak diukur
+    so2           REAL,                        -- Sulfur dioksida (ppb); NULL bila tidak diukur
     ispu          INTEGER NOT NULL,                -- Indeks Standar Pencemar Udara
     comfort_index REAL NOT NULL DEFAULT 0,      -- Indeks kenyamanan (0-100)
     status        VARCHAR(40) NOT NULL,         -- Baik / Sedang / Tidak Sehat, dll.
@@ -31,6 +31,9 @@ CREATE TABLE IF NOT EXISTS stasiun_sako (
     source        VARCHAR(60) NOT NULL DEFAULT 'bmkg',  -- asal data: bmkg | cams | sensor
     distance_km   REAL,                        -- jarak stasiun ke pusat Sako (km), bisa NULL
     observed_at   TIMESTAMP,                   -- waktu pengamatan di sumber asli, bisa NULL
+    lat           REAL,                        -- koordinat stasiun asli (provenance)
+    lon           REAL,
+    source_name   VARCHAR(120),                -- nama sumber asli, mis. "WAQI mapq" / "Open-Meteo CAMS Global"
     recorded_at   TIMESTAMP DEFAULT NOW()       -- Waktu pencatatan
 );
 
@@ -44,6 +47,12 @@ CREATE INDEX IF NOT EXISTS idx_stasiun_sako_source     ON stasiun_sako (source);
 ALTER TABLE stasiun_sako ADD COLUMN IF NOT EXISTS source      VARCHAR(60) NOT NULL DEFAULT 'bmkg';
 ALTER TABLE stasiun_sako ADD COLUMN IF NOT EXISTS distance_km REAL;
 ALTER TABLE stasiun_sako ADD COLUMN IF NOT EXISTS observed_at TIMESTAMP;
+ALTER TABLE stasiun_sako ADD COLUMN IF NOT EXISTS lat         REAL;
+ALTER TABLE stasiun_sako ADD COLUMN IF NOT EXISTS lon         REAL;
+ALTER TABLE stasiun_sako ADD COLUMN IF NOT EXISTS source_name VARCHAR(120);
+ALTER TABLE stasiun_sako ALTER COLUMN pm10 DROP NOT NULL;
+ALTER TABLE stasiun_sako ALTER COLUMN co   DROP NOT NULL;
+ALTER TABLE stasiun_sako ALTER COLUMN so2  DROP NOT NULL;
 
 -- 2) Tabel riwayat donasi Trakteer
 CREATE TABLE IF NOT EXISTS riwayat_trakteer (

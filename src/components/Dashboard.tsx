@@ -14,9 +14,9 @@ interface Station {
   id?: number;
   location: string;
   pm25: number;
-  pm10: number;
-  co: number;
-  so2: number;
+  pm10?: number | null;
+  co?: number | null;
+  so2?: number | null;
   ispu: number;
   comfort_index?: number;
   status: string;
@@ -25,6 +25,9 @@ interface Station {
   source?: SourceCode;
   distance_km?: number | null;
   observed_at?: string | null;
+  lat?: number | null;
+  lon?: number | null;
+  source_name?: string | null;
   recorded_at?: string;
 }
 
@@ -50,6 +53,10 @@ interface Metric {
   unit: string;
   cat: CategoryMeta;
   big?: boolean;
+  /** true bila sumber tidak mengukur polutan ini → tampil "tidak tersedia" */
+  unavailable?: boolean;
+  /** true bila nilai diturunkan (estimasi), bukan pengukuran langsung */
+  estimated?: boolean;
 }
 
 export default function Dashboard() {
@@ -61,16 +68,23 @@ export default function Dashboard() {
   const [tren, setTren] = useState<TrenPoint[]>([]);
 
   const applyStations = useCallback((raw: Array<Station | Record<string, unknown>>) => {
-    const data: Station[] = raw.map((d) => ({
-      ...(d as Station),
-      pm25: Number((d as Record<string, unknown>).pm25),
-      pm10: Number((d as Record<string, unknown>).pm10),
-      co: Number((d as Record<string, unknown>).co),
-      so2: Number((d as Record<string, unknown>).so2),
-      ispu: Number((d as Record<string, unknown>).ispu),
-      temperature: Number((d as Record<string, unknown>).temperature),
-      humidity: Number((d as Record<string, unknown>).humidity),
-    }));
+    const data: Station[] = raw.map((d) => {
+      const r = d as Record<string, unknown>;
+      // Pertahankan NULL untuk polutan yang tidak diukur sumber — jangan
+      // di-Number() jadi 0, karena 0.0 akan terlihat seperti pengukuran nyata.
+      const numOrUndefined = (v: unknown) =>
+        v == null ? undefined : Number(v);
+      return {
+        ...(d as Station),
+        pm25: Number(r.pm25),
+        pm10: numOrUndefined(r.pm10),
+        co: numOrUndefined(r.co),
+        so2: numOrUndefined(r.so2),
+        ispu: Number(r.ispu),
+        temperature: Number(r.temperature),
+        humidity: Number(r.humidity),
+      };
+    });
     // pilih stasiun dengan ISPU tertinggi sebagai representatif Sako
     const worst = data.length
       ? data.reduce((a, b) => (b.ispu > a.ispu ? b : a))
@@ -187,11 +201,68 @@ export default function Dashboard() {
   const comfort = computeComfort(selected.temperature, selected.humidity);
   const comfortInfo = comfortLabel(comfort);
 
+  // BMKG (WAQI mapq) hanya memberi AQI total → PM2.5 diturunkan lewat inversi
+  // breakpoint, PM10/CO/SO₂ tidak diberikan sumber. Tidak ada angka yang
+  // difabrikasi: yang tidak diukur ditampilkan sebagai "tidak tersedia".
+  const isBmkg = (selected.source ?? "sensor") === "bmkg";
+
   const metrics: Metric[] = [
-    { key: "pm25", label: "PM2.5", value: selected.pm25.toFixed(1), unit: "µg/m³", cat: categoryFromIspu(selected.pm25 * 2) },
-    { key: "pm10", label: "PM10", value: selected.pm10.toFixed(1), unit: "µg/m³", cat: categoryFromIspu(selected.pm10) },
-    { key: "co", label: "CO", value: selected.co.toFixed(1), unit: "ppm", cat: categoryFromIspu(selected.co * 12) },
-    { key: "so2", label: "SO₂", value: selected.so2.toFixed(1), unit: "ppb", cat: categoryFromIspu(selected.so2 * 2) },
+    {
+      key: "pm25",
+      label: "PM2.5",
+      value: selected.pm25.toFixed(1),
+      unit: "µg/m³",
+      cat: categoryFromIspu(selected.pm25 * 2),
+      estimated: isBmkg,
+    },
+    selected.pm10 == null
+      ? {
+          key: "pm10",
+          label: "PM10",
+          value: "—",
+          unit: "µg/m³",
+          cat: categoryFromIspu(0),
+          unavailable: true,
+        }
+      : {
+          key: "pm10",
+          label: "PM10",
+          value: selected.pm10.toFixed(1),
+          unit: "µg/m³",
+          cat: categoryFromIspu(selected.pm10),
+        },
+    selected.co == null
+      ? {
+          key: "co",
+          label: "CO",
+          value: "—",
+          unit: "ppm",
+          cat: categoryFromIspu(0),
+          unavailable: true,
+        }
+      : {
+          key: "co",
+          label: "CO",
+          value: selected.co.toFixed(1),
+          unit: "ppm",
+          cat: categoryFromIspu(selected.co * 12),
+        },
+    selected.so2 == null
+      ? {
+          key: "so2",
+          label: "SO₂",
+          value: "—",
+          unit: "ppb",
+          cat: categoryFromIspu(0),
+          unavailable: true,
+        }
+      : {
+          key: "so2",
+          label: "SO₂",
+          value: selected.so2.toFixed(1),
+          unit: "ppb",
+          cat: categoryFromIspu(selected.so2 * 2),
+        },
   ];
 
   return (
@@ -303,6 +374,13 @@ export default function Dashboard() {
                 {selected.distance_km != null ? ` · ${selected.distance_km} km dari Sako` : ""}
               </p>
             )}
+            {/* Provenance: untuk akuntabilitas data */}
+            <p className="mt-0.5 text-[11px] text-slate-400">
+              Sumber: {selected.source_name ?? SOURCE_META[selected.source ?? "sensor"].label}
+              {selected.lat != null && selected.lon != null
+                ? ` · koordinat ${selected.lat.toFixed(3)}, ${selected.lon.toFixed(3)}`
+                : ""}
+            </p>
           </div>
           <div className="text-left">
             <p className="text-sm font-medium text-slate-600">
@@ -454,15 +532,36 @@ function MetricCard({ metric }: { metric: Metric }) {
         <p className="text-xs font-medium uppercase tracking-wide text-slate-500">
           {metric.label}
         </p>
-        <span className={`h-2.5 w-2.5 rounded-full ${metric.cat.badgeBg}`} />
+        {metric.unavailable ? (
+          <span className="rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-medium text-slate-400">
+            tidak diukur
+          </span>
+        ) : (
+          <span className={`h-2.5 w-2.5 rounded-full ${metric.cat.badgeBg}`} />
+        )}
       </div>
-      <p className={`mt-2 text-3xl font-extrabold ${metric.cat.color}`}>
+      <p
+        className={`mt-2 text-3xl font-extrabold ${
+          metric.unavailable ? "text-slate-300" : metric.cat.color
+        }`}
+      >
         {metric.value}
       </p>
       <p className="text-xs text-slate-400">{metric.unit}</p>
-      <p className="mt-1 text-xs font-medium text-slate-500">
-        {metric.cat.emoji} {metric.cat.label}
-      </p>
+      {metric.unavailable ? (
+        <p className="mt-1 text-xs font-medium text-slate-400">
+          sumber tidak menyediakan
+        </p>
+      ) : (
+        <p className="mt-1 text-xs font-medium text-slate-500">
+          {metric.cat.emoji} {metric.cat.label}
+          {metric.estimated && (
+            <span className="ml-1 rounded bg-amber-100 px-1.5 py-0.5 text-[10px] font-medium text-amber-700">
+              estimasi
+            </span>
+          )}
+        </p>
+      )}
     </div>
   );
 }

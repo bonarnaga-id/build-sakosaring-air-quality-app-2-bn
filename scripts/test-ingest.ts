@@ -14,17 +14,25 @@ dotenvConfig({ path: resolve(process.cwd(), ".env.local") });
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { fetchBmkgStations } = require("../src/lib/waqi");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
-const { fetchCamsStations, fetchCamsTren } = require("../src/lib/cams");
+const { fetchCamsStations, fetchCamsTren, fetchSakoWeather } = require("../src/lib/cams");
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const { upsertStasiun, insertTrenMassal } = require("../src/lib/airQuality");
 
 async function main() {
   const summary = { upserted: 0, bmkg: 0, cams: 0, tren: 0, errors: 0 };
 
+  // Suhu & kelembaban REAL Sako (Open-Meteo) dipakai untuk stasiun BMKG yang
+  // tidak menyediikannya; sama seperti perilaku cron /api/cron/ingest.
+  const weather = await fetchSakoWeather().catch(() => ({
+    temperature: 30,
+    humidity: 75,
+  }));
+  console.log(`Cuaca Sako: ${weather.temperature}°C · ${weather.humidity}%`);
+
   try {
     for (const input of await fetchBmkgStations()) {
       try {
-        const row = await upsertStasiun(input);
+        const row = await upsertStasiun({ ...input, ...weather });
         summary.upserted++;
         summary.bmkg++;
         console.log(`✓ ${row.location} | ISPU ${row.ispu} | ${row.status}`);

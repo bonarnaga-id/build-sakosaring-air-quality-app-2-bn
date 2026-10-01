@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
-import { fetchCamsStations, fetchCamsTren } from "@/lib/cams";
+import { fetchCamsStations, fetchCamsTren, fetchSakoWeather } from "@/lib/cams";
 import { fetchBmkgStations } from "@/lib/waqi";
 import { upsertStasiun, insertTrenMassal } from "@/lib/airQuality";
 
@@ -33,10 +33,16 @@ export async function GET(_request: NextRequest) {
 
   // --- 1) Stasiun BMKG (pengukuran fisik) ---------------------------------
   try {
+    // Suhu/kelembaban REAL Sako dipakai untuk semua stasiun (WAQI mapq tidak
+    // menyediakannya); jatuh ke nilai netral hanya jika panggilan gagal.
+    const weather = await fetchSakoWeather().catch(() => ({
+      temperature: 30,
+      humidity: 75,
+    }));
     const bmkg = await fetchBmkgStations();
     for (const input of bmkg) {
       try {
-        await upsertStasiun(input);
+        await upsertStasiun({ ...input, ...weather });
         summary.upserted++;
         summary.bmkg++;
       } catch (err) {

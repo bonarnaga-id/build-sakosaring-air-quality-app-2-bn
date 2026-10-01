@@ -17,10 +17,11 @@
  *
  * Catatan: mapq hanya memberi nilai AQI total, bukan rincian per polutan.
  * PM2.5 diturunkan dari AQI lewat inversi breakpoint US EPA agar tetap
- * konsisten dengan cara ISPU dihitung di lib/air.
+ * konsisten dengan cara ISPU dihitung di lib/air. PM10/CO/SO₂ TIDAK
+ * difabrikasi — dibiarkan NULL karena tidak diberikan sumber.
  */
 
-import { categoryFromIspu, computeComfort, computeIspu, ispuFrom } from "@/lib/air";
+import { categoryFromIspu, computeComfort } from "@/lib/air";
 import type { UpsertStationInput } from "@/lib/airQuality";
 
 const BASE = "https://api.waqi.info/mapq";
@@ -113,6 +114,14 @@ export async function fetchWaqiStations(): Promise<WaqiStation[]> {
 /**
  * Konversi stasiun WAQI ke baris stasiun SakoSaring.
  * Mengembalikan null bila AQI tidak valid atau stasiun terlalu jauh.
+ *
+ * INTEGRITAS DATA — penting untuk dipahami:
+ *  Endpoint `mapq` WAQI HANYA memberi nilai AQI total (US EPA) + polutan
+ *  utama, TIDAK memberi rincian konsentrasi per polutan. Karena itu:
+ *   - PM2.5 diturunkan dari AQI lewat inversi breakpoint US EPA (diberi label
+ *     jelas sebagai "estimasi" di UI).
+ *   - PM10, CO, SO₂ TIDAK difabrikasi. Kolomnya diisi NULL (tidak tersedia)
+ *     agar tidak ada angka palsu yang ditampilkan sebagai pengukuran.
  */
 export function toStationInput(s: WaqiStation): UpsertStationInput | null {
   const aqi = num(s.aqi);
@@ -123,14 +132,12 @@ export function toStationInput(s: WaqiStation): UpsertStationInput | null {
 
   // mapq hanya memberi AQI total; PM2.5 diturunkan lewat inversi breakpoint.
   const pm25 = aqiToPm25(aqi);
-  const pm10 = Math.round(pm25 * 1.35); // rasio PM10/PM2.5 khas perkotaan Indonesia
-  const so2 = 0;
-  const co = 0;
+  // PM10/CO/SO₂ tidak diberikan mapq → NULL (bukan difabrikasi).
+  const pm10 = null;
+  const so2 = null;
+  const co = null;
 
-  const ispu = Math.max(
-    ispuFrom(pm25, "pm25"),
-    ispuFrom(pm10, "pm10")
-  );
+  const ispu = aqi;
 
   const observedAt = s.stamp ? new Date(s.stamp * 1000) : null;
   const name = (s.city ?? "Stasiun BMKG")
@@ -152,6 +159,9 @@ export function toStationInput(s: WaqiStation): UpsertStationInput | null {
     source: "bmkg",
     distance_km: Math.round(distance * 10) / 10,
     observed_at: observedAt,
+    lat: s.lat,
+    lon: s.lon,
+    source_name: "WAQI mapq (BMKG)",
   };
 }
 

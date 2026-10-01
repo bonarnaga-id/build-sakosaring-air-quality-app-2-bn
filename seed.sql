@@ -6,22 +6,24 @@
 -- ============================================================
 
 -- Stasiun awal dengan data REAL hasil verifikasi langsung ke sumbernya
--- (diambil 2026-10-01 07:00 WIB). Nilai ini hanya titik mula agar dashboard
+-- (diambil 2026-10-01 11:00 WIB). Nilai ini hanya titik mula agar dashboard
 -- tidak kosong sebelum cron pertama jalan; cron /api/cron/ingest akan
 -- menimpa semuanya tiap 5 menit dengan data real terbaru.
 --
--- Sumber:
---   BMKG (stasiun fisik)  -> WAQI mapq      : AQI 316 (Talang Betutu), 291 (Musi 2)
---   CAMS Global (satelit) -> Open-Meteo     : PM2.5 159.3, PM10 165.3, US AQI 193
+-- INTEGRITAS DATA:
+--  - WAQI mapq hanya memberi AQI total (US EPA), jadi PM2.5 diturunkan lewat
+--    inversi breakpoint dan diberi label "estimasi" di UI. PM10/CO/SO₂ ditulis
+--    NULL, BUKAN difabrikasi — sumber tidak menyediakannya.
+--  - CAMS Global memberi PM2.5, PM10, CO, SO₂ langsung (µg/m³ → konversi unit).
 --
 -- ON CONFLICT DO NOTHING agar seed idempotent (location unik).
 INSERT INTO stasiun_sako
     (location, pm25, pm10, co, so2, ispu, comfort_index, status,
-     temperature, humidity, source, distance_km, observed_at)
+     temperature, humidity, source, distance_km, observed_at, lat, lon, source_name)
 VALUES
-    ('Talang Betutu Palembang', 265.4, 358.3, 0, 0, 316, 25, 'Sangat Tidak Sehat', 30, 75, 'bmkg', 5.9, '2026-10-01 06:00:00'),
-    ('Musi 2 Palembang',        244.1, 329.5, 0, 0, 291, 25, 'Sangat Tidak Sehat', 30, 75, 'bmkg', 8.4, '2026-10-01 05:00:00'),
-    ('Sako',                    159.3, 165.3, 2.48, 6.76, 207, 25, 'Tidak Sehat', 30, 75, 'cams', NULL, '2026-10-01 07:00:00')
+    ('Talang Betutu Palembang', 316.0, NULL, NULL, NULL, 367, 25, 'Berbahaya', 34.5, 42, 'bmkg', 9.2, '2026-10-01 11:00:00', -3.031, 104.72, 'WAQI mapq (BMKG)'),
+    ('Musi 2 Palembang',        212.0, NULL, NULL, NULL, 212, 25, 'Sangat Tidak Sehat', 34.5, 42, 'bmkg', 8.9, '2026-10-01 11:00:00', -2.94, 104.7, 'WAQI mapq (BMKG)'),
+    ('Sako',                     85.4, 92.0, 1.25, 4.51, 166, 25, 'Tidak Sehat', 34.5, 42, 'cams', NULL, '2026-10-01 11:00:00', -2.9734, 104.7754, 'Open-Meteo CAMS Global')
 ON CONFLICT (location) DO NOTHING;
 
 -- Tren 3 hari terakhir (CAMS Global, per jam) — cuplikan beberapa titik

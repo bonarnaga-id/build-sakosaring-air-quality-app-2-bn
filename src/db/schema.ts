@@ -20,9 +20,11 @@ export const stasiunSako = pgTable("stasiun_sako", {
   id: serial("id").primaryKey(),
   location: varchar("location", { length: 255 }).notNull().unique(),
   pm25: real("pm25").notNull(),
-  pm10: real("pm10").notNull(),
-  co: real("co").notNull(),
-  so2: real("so2").notNull(),
+  // pm10/co/so2 NULLABLE: sumber tertentu (WAQI mapq) hanya memberi AQI total,
+  // jadi tidak boleh ada angka palsu yang ditulis sebagai "pengukuran".
+  pm10: real("pm10"),
+  co: real("co"),
+  so2: real("so2"),
   ispu: integer("ispu").notNull(),
   comfortIndex: real("comfort_index").notNull(),
   status: varchar("status", { length: 40 }).notNull(),
@@ -31,6 +33,10 @@ export const stasiunSako = pgTable("stasiun_sako", {
   source: varchar("source", { length: 60 }).notNull().default("bmkg"),
   distanceKm: real("distance_km"),
   observedAt: timestamp("observed_at", { mode: "date" }),
+  // Provenance: koordinat & nama sumber asli untuk akuntabilitas data.
+  lat: real("lat"),
+  lon: real("lon"),
+  sourceName: varchar("source_name", { length: 120 }),
   recordedAt: timestamp("recorded_at", { mode: "date" }).defaultNow().notNull(),
 });
 

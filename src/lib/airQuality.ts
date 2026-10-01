@@ -13,9 +13,9 @@ export interface StationRow {
   id: number;
   location: string;
   pm25: number;
-  pm10: number;
-  co: number;
-  so2: number;
+  pm10: number | null;
+  co: number | null;
+  so2: number | null;
   ispu: number;
   comfort_index: number;
   status: string;
@@ -24,15 +24,18 @@ export interface StationRow {
   source: StationSource;
   distance_km: number | null;
   observed_at: string | null;
+  lat: number | null;
+  lon: number | null;
+  source_name: string | null;
   recorded_at: string;
 }
 
 export interface UpsertStationInput {
   location: string;
   pm25: number;
-  pm10: number;
-  co: number;
-  so2: number;
+  pm10?: number | null;
+  co?: number | null;
+  so2?: number | null;
   ispu: number;
   comfort_index: number;
   status: string;
@@ -41,6 +44,9 @@ export interface UpsertStationInput {
   source?: StationSource;
   distance_km?: number | null;
   observed_at?: Date | null;
+  lat?: number | null;
+  lon?: number | null;
+  source_name?: string | null;
 }
 
 export interface TrenRow {
@@ -63,7 +69,7 @@ export async function getLatestStations(): Promise<StationRow[]> {
   const res = await db.execute(sql`
     SELECT id, location, pm25, pm10, co, so2, ispu, comfort_index,
            status, temperature, humidity, source, distance_km, observed_at,
-           recorded_at
+           lat, lon, source_name, recorded_at
     FROM stasiun_sako
     ORDER BY id ASC
   `);
@@ -78,13 +84,15 @@ export async function upsertStasiun(input: UpsertStationInput): Promise<StationR
   const res = await db.execute(sql`
     INSERT INTO stasiun_sako
       (location, pm25, pm10, co, so2, ispu, comfort_index, status,
-       temperature, humidity, source, distance_km, observed_at)
+       temperature, humidity, source, distance_km, observed_at,
+       lat, lon, source_name)
     VALUES
-      (${input.location}, ${input.pm25}, ${input.pm10}, ${input.co}, ${input.so2},
-       ${input.ispu}, ${input.comfort_index}, ${input.status},
+      (${input.location}, ${input.pm25}, ${input.pm10 ?? null}, ${input.co ?? null},
+       ${input.so2 ?? null}, ${input.ispu}, ${input.comfort_index}, ${input.status},
        ${input.temperature}, ${input.humidity},
        ${input.source ?? "sensor"}, ${input.distance_km ?? null},
-       ${input.observed_at ?? null})
+       ${input.observed_at ?? null},
+       ${input.lat ?? null}, ${input.lon ?? null}, ${input.source_name ?? null})
     ON CONFLICT (location) DO UPDATE SET
       pm25 = EXCLUDED.pm25,
       pm10 = EXCLUDED.pm10,
@@ -98,10 +106,13 @@ export async function upsertStasiun(input: UpsertStationInput): Promise<StationR
       source = EXCLUDED.source,
       distance_km = EXCLUDED.distance_km,
       observed_at = EXCLUDED.observed_at,
+      lat = EXCLUDED.lat,
+      lon = EXCLUDED.lon,
+      source_name = EXCLUDED.source_name,
       recorded_at = NOW()
     RETURNING id, location, pm25, pm10, co, so2, ispu, comfort_index,
               status, temperature, humidity, source, distance_km, observed_at,
-              recorded_at
+              lat, lon, source_name, recorded_at
   `);
   return res.rows[0] as unknown as StationRow;
 }

@@ -11,8 +11,8 @@
  *  - PM2.5/PM10 → µg/m³ (langsung dipakai)
  *  - CO         → µg/m³, dibagi 1145 ke ppm (25°C, 1 atm)
  *  - SO₂        → µg/m³, dibagi 2.619 ke ppb
- *  - temperature_2m / relative_humidity_2m TIDAK didukung endpoint air-quality
- *    (mengembalikan null), jadi suhu & kelembaban diisi nilai netral.
+ *  - Suhu & kelembaban diambil dari endpoint forecast Open-Meteo (data real),
+ *    BUKAN angka hardcoded. Hanya jatuh ke nilai netral jika panggilan gagal.
  */
 
 import { categoryFromIspu, computeComfort, computeIspu } from "@/lib/air";
@@ -97,6 +97,14 @@ async function fetchJson(url: string): Promise<CamsResponse> {
   }
 }
 
+interface WeatherResponse {
+  current?: {
+    temperature_2m?: number | null;
+    relative_humidity_2m?: number | null;
+    time?: string;
+  };
+}
+
 /** URL untuk pembacaan CURRENT di beberapa titik grid Sako sekaligus. */
 function currentUrl(): string {
   const lats = SAKO_GRID.map((g) => g.lat).join(",");
@@ -119,11 +127,39 @@ function hourlyUrl(): string {
 }
 
 /**
+ * Suhu & kelembaban REAL di Sako dari Open-Meteo (endpoint forecast terpisah,
+ * karena endpoint air-quality tidak menyediakannya). Mengembalikan nilai
+ * netral hanya jika panggilan gagal — tidak pernah difabrikasi.
+ */
+export async function fetchSakoWeather(): Promise<{
+  temperature: number;
+  humidity: number;
+}> {
+  const url =
+    `https://api.open-meteo.com/v1/forecast?latitude=${SAKO_CENTER.lat}` +
+    `&longitude=${SAKO_CENTER.lon}` +
+    `&current=temperature_2m,relative_humidity_2m&timezone=Asia%2FJakarta`;
+  const json = (await fetchJson(url)) as unknown as WeatherResponse;
+  const t = num(json.current?.temperature_2m);
+  const h = num(json.current?.relative_humidity_2m);
+  return {
+    temperature: t ?? 30,
+    humidity: h ?? 75,
+  };
+}
+
+/**
  * Ambil pembacaan real CAMS Global untuk tiap titik grid Sako.
  * Mengembalikan UpsertStationInput siap disimpan, atau [] bila gagal total.
+ *
+ * Suhu & kelembaban diambil dari endpoint forecast Open-Meteo (data real),
+ * bukan angka hardcoded.
  */
 export async function fetchCamsStations(): Promise<UpsertStationInput[]> {
-  const json = await fetchJson(currentUrl());
+  const [json, weather] = await Promise.all([
+    fetchJson(currentUrl()),
+    fetchSakoWeather().catch(() => ({ temperature: 30, humidity: 75 })),
+  ]);
   const arr = Array.isArray(json) ? json : [json];
 
   const out: UpsertStationInput[] = [];
@@ -139,9 +175,9 @@ export async function fetchCamsStations(): Promise<UpsertStationInput[]> {
     const co = num(c.carbon_monoxide) != null ? num(c.carbon_monoxide)! / 1145 : 0;
     const so2 = num(c.sulphur_dioxide) != null ? num(c.sulphur_dioxide)! / 2.619 : 0;
 
-    // Suhu/kelembaban tidak disediakan endpoint air-quality → netral.
-    const temperature = 30;
-    const humidity = 75;
+    // Suhu/kelembaban REAL dari endpoint forecast Open-Meteo.
+    const temperature = weather.temperature;
+    const humidity = weather.humidity;
 
     const ispu = computeIspu({ pm25, pm10, so2, co });
     const observedAt = c.time ? new Date(c.time) : null;
@@ -159,6 +195,9 @@ export async function fetchCamsStations(): Promise<UpsertStationInput[]> {
       humidity,
       source: "cams",
       observed_at: observedAt,
+      lat: point.latitude ?? SAKO_CENTER.lat,
+      lon: point.longitude ?? SAKO_CENTER.lon,
+      source_name: "Open-Meteo CAMS Global",
     });
   });
 
