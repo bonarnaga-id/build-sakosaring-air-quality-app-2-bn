@@ -15,7 +15,8 @@ export const maxDuration = 60;
  *  2) CAMS Global (model satelit Copernicus) lewat Open-Meteo — data grid area Sako.
  *
  * Keduanya real, gratis, tanpa API key. Tidak ada data palsu / dummy.
- * Dijadwalkan lewat `vercel.json` (Vercel Cron) tiap 5 menit.
+ * Dijadwalkan lewat `vercel.json` (Vercel Cron) tiap hari (batasan Hobby plan:
+ * cron harian saja; upgrade ke Pro untuk tiap 5 menit).
  *
  * Catatan keamanan ringan: endpoint ini hanya menulis data publik ke tabel
  * lokal, jadi terbuka. Jika ingin membatasi di produksi, tambahkan pengecekan

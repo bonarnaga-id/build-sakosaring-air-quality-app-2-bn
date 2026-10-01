@@ -13,3 +13,5 @@ out/
 # OS / tooling
 .DS_Store
 *.log
+
+.env*
