@@ -1,60 +1,90 @@
 import { NextRequest, NextResponse } from "next/server";
-import { findNearbyLocations, fetchLatestByLocation, toStationInput } from "@/lib/openaq";
-import { upsertStasiun } from "@/lib/airQuality";
+import { fetchCamsStations, fetchCamsTren } from "@/lib/cams";
+import { fetchBmkgStations } from "@/lib/waqi";
+import { upsertStasiun, insertTrenMassal } from "@/lib/airQuality";
 
 export const dynamic = "force-dynamic";
 export const runtime = "nodejs";
-export const maxDuration = 20;
+export const maxDuration = 60;
 
 /**
- * GET /api/cron/ingest — sinkronisasi data real-time dari OpenAQ v3 ke Neon.
+ * GET /api/cron/ingest — sinkronisasi data REAL ke Neon PostgreSQL.
  *
+ * Mengambil dari DUA sumber yang saling membanding:
+ *  1) BMKG (stasiun fisik) lewat WAQI mapq — pengukuran lapangan langsung.
+ *  2) CAMS Global (model satelit Copernicus) lewat Open-Meteo — data grid area Sako.
+ *
+ * Keduanya real, gratis, tanpa API key. Tidak ada data palsu / dummy.
  * Dijadwalkan lewat `vercel.json` (Vercel Cron) tiap 5 menit.
- * Tanpa key (dev), mengembalikan 503. Set env `OPENAQ_API_KEY` untuk aktif.
  *
- * Catatan keamanan ringan: endpoint ini hanya menulis data publik OpenAQ ke
- * tabel lokal, jadi terbuka. Jika ingin membatasi di produksi, tambahkan
- * pengecekan `x-cron-secret` atau pindah ke path berparameter rahasia.
+ * Catatan keamanan ringan: endpoint ini hanya menulis data publik ke tabel
+ * lokal, jadi terbuka. Jika ingin membatasi di produksi, tambahkan pengecekan
+ * `x-cron-secret` atau pindah ke path berparameter rahasia.
  */
 export async function GET(_request: NextRequest) {
-  if (!process.env.OPENAQ_API_KEY) {
-    return NextResponse.json(
-      { ok: false, error: "OPENAQ_API_KEY belum diset." },
-      { status: 503 }
-    );
-  }
-
   const summary = {
     upserted: 0,
     skipped: 0,
     errors: 0,
-    locations: 0,
+    bmkg: 0,
+    cams: 0,
+    tren: 0,
   };
 
+  // --- 1) Stasiun BMKG (pengukuran fisik) ---------------------------------
   try {
-    const locations = await findNearbyLocations();
-    summary.locations = locations.length;
-
-    for (const loc of locations) {
+    const bmkg = await fetchBmkgStations();
+    for (const input of bmkg) {
       try {
-        // jeda kecil hormati rate limit OpenAQ (60 req/men)
-        await new Promise((r) => setTimeout(r, 250));
-        const readings = await fetchLatestByLocation(loc.id);
-        const input = toStationInput(loc, readings);
-        if (!input) {
-          summary.skipped++;
-          continue;
-        }
         await upsertStasiun(input);
         summary.upserted++;
+        summary.bmkg++;
       } catch (err) {
         summary.errors++;
-        console.error(`ingest error for location ${loc.id}:`, err);
+        console.error(`ingest bmkg error (${input.location}):`, err);
       }
     }
   } catch (err) {
-    console.error("ingest fetch failed:", err);
     summary.errors++;
+    console.error("ingest bmkg fetch failed:", err);
+  }
+
+  // --- 2) CAMS Global (model satelit) -------------------------------------
+  try {
+    const cams = await fetchCamsStations();
+    for (const input of cams) {
+      try {
+        await upsertStasiun(input);
+        summary.upserted++;
+        summary.cams++;
+      } catch (err) {
+        summary.errors++;
+        console.error(`ingest cams error (${input.location}):`, err);
+      }
+    }
+  } catch (err) {
+    summary.errors++;
+    console.error("ingest cams fetch failed:", err);
+  }
+
+  // --- 3) Tren 3 hari terakhir (untuk grafik) ------------------------------
+  try {
+    const tren = await fetchCamsTren();
+    summary.tren = await insertTrenMassal(tren);
+  } catch (err) {
+    summary.errors++;
+    console.error("ingest tren fetch failed:", err);
+  }
+
+  if (summary.upserted === 0) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: "Tidak ada stasiun yang berhasil diambil dari BMKG maupun CAMS.",
+        summary,
+      },
+      { status: 502 }
+    );
   }
 
   return NextResponse.json({ ok: true, summary });

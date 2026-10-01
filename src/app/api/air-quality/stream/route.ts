@@ -11,6 +11,9 @@ const INTERVAL_MS = 10_000;
  * Mendorong pembaruan stasiun ke semua koneksi terbuka secara instan
  * (berganti dengan polling tiap 60s di Dashboard). Browser
  * (EventSource) otomatis reconnect bila putus.
+ *
+ * Data yang didorong adalah hasil gabungan multi-sumber (BMKG + CAMS Global)
+ * yang sudah disimpan ke Neon oleh cron /api/cron/ingest.
  */
 export async function GET(request: NextRequest) {
   const stream = new ReadableStream({

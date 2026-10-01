@@ -4,7 +4,10 @@
  */
 
 import { db } from "@/db";
+import { trenUdara } from "@/db/schema";
 import { sql } from "drizzle-orm";
+
+export type StationSource = "bmkg" | "cams" | "sensor";
 
 export interface StationRow {
   id: number;
@@ -18,6 +21,9 @@ export interface StationRow {
   status: string;
   temperature: number;
   humidity: number;
+  source: StationSource;
+  distance_km: number | null;
+  observed_at: string | null;
   recorded_at: string;
 }
 
@@ -32,13 +38,32 @@ export interface UpsertStationInput {
   status: string;
   temperature: number;
   humidity: number;
+  source?: StationSource;
+  distance_km?: number | null;
+  observed_at?: Date | null;
 }
+
+export interface TrenRow {
+  observed_at: string;
+  pm25: number;
+  pm10: number;
+  us_aqi: number;
+  source: string;
+}
+
+/** Label ramah per kode sumber, dipakai UI untuk membedakan asal data. */
+export const SOURCE_LABEL: Record<StationSource, string> = {
+  bmkg: "BMKG (stasiun fisik)",
+  cams: "CAMS Global (satelit)",
+  sensor: "Sensor komunitas",
+};
 
 /** Semua stasiun terbaru (urut id), dipakai oleh Dashboard & SSE. */
 export async function getLatestStations(): Promise<StationRow[]> {
   const res = await db.execute(sql`
     SELECT id, location, pm25, pm10, co, so2, ispu, comfort_index,
-           status, temperature, humidity, recorded_at
+           status, temperature, humidity, source, distance_km, observed_at,
+           recorded_at
     FROM stasiun_sako
     ORDER BY id ASC
   `);
@@ -52,11 +77,14 @@ export async function getLatestStations(): Promise<StationRow[]> {
 export async function upsertStasiun(input: UpsertStationInput): Promise<StationRow> {
   const res = await db.execute(sql`
     INSERT INTO stasiun_sako
-      (location, pm25, pm10, co, so2, ispu, comfort_index, status, temperature, humidity)
+      (location, pm25, pm10, co, so2, ispu, comfort_index, status,
+       temperature, humidity, source, distance_km, observed_at)
     VALUES
       (${input.location}, ${input.pm25}, ${input.pm10}, ${input.co}, ${input.so2},
        ${input.ispu}, ${input.comfort_index}, ${input.status},
-       ${input.temperature}, ${input.humidity})
+       ${input.temperature}, ${input.humidity},
+       ${input.source ?? "sensor"}, ${input.distance_km ?? null},
+       ${input.observed_at ?? null})
     ON CONFLICT (location) DO UPDATE SET
       pm25 = EXCLUDED.pm25,
       pm10 = EXCLUDED.pm10,
@@ -67,9 +95,44 @@ export async function upsertStasiun(input: UpsertStationInput): Promise<StationR
       status = EXCLUDED.status,
       temperature = EXCLUDED.temperature,
       humidity = EXCLUDED.humidity,
+      source = EXCLUDED.source,
+      distance_km = EXCLUDED.distance_km,
+      observed_at = EXCLUDED.observed_at,
       recorded_at = NOW()
     RETURNING id, location, pm25, pm10, co, so2, ispu, comfort_index,
-              status, temperature, humidity, recorded_at
+              status, temperature, humidity, source, distance_km, observed_at,
+              recorded_at
   `);
   return res.rows[0] as unknown as StationRow;
+}
+
+/**
+ * Simpan banyak baris tren per jam sekaligus (dari CAMS Global).
+ * Konflik (observed_at, source) di-skip karena data lama tidak diubah.
+ */
+export async function insertTrenMassal(rows: TrenRow[]): Promise<number> {
+  if (!rows.length) return 0;
+  const values = rows.map((r) => ({
+    observedAt: new Date(r.observed_at),
+    pm25: r.pm25,
+    pm10: r.pm10,
+    usAqi: r.us_aqi,
+    source: r.source,
+  }));
+  const res = await db
+    .insert(trenUdara)
+    .values(values)
+    .onConflictDoNothing();
+  return res.rowCount ?? 0;
+}
+
+/** Ambil tren 3 hari terakhir (urut naik) untuk grafik Dashboard. */
+export async function getTren3Hari(): Promise<TrenRow[]> {
+  const res = await db.execute(sql`
+    SELECT observed_at, pm25, pm10, us_aqi, source
+    FROM tren_udara
+    WHERE observed_at >= NOW() - INTERVAL '3 days'
+    ORDER BY observed_at ASC
+  `);
+  return res.rows as unknown as TrenRow[];
 }

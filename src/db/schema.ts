@@ -6,10 +6,15 @@ import {
   integer,
   text,
   timestamp,
+  unique,
 } from "drizzle-orm/pg-core";
 
 /**
  * Tabel stasiun pemantauan kualitas udara di Kecamatan Sako, Palembang.
+ *
+ * `source` menyimpan asal data supaya tiap pembacaan bisa dibandingkan antar
+ * sumber (stasiun BMKG fisik vs model satelit CAMS Global vs sensor komunitas),
+ * bukan hanya mengandalkan satu sumber saja.
  */
 export const stasiunSako = pgTable("stasiun_sako", {
   id: serial("id").primaryKey(),
@@ -23,7 +28,10 @@ export const stasiunSako = pgTable("stasiun_sako", {
   status: varchar("status", { length: 40 }).notNull(),
   temperature: real("temperature").notNull(),
   humidity: real("humidity").notNull(),
-  recordedAt: timestamp("recorded_at").defaultNow().notNull(),
+  source: varchar("source", { length: 60 }).notNull().default("bmkg"),
+  distanceKm: real("distance_km"),
+  observedAt: timestamp("observed_at", { mode: "date" }),
+  recordedAt: timestamp("recorded_at", { mode: "date" }).defaultNow().notNull(),
 });
 
 /**
@@ -41,3 +49,22 @@ export type StasiunSako = typeof stasiunSako.$inferSelect;
 export type NewStasiunSako = typeof stasiunSako.$inferInsert;
 export type RiwayatTrakteer = typeof riwayatTrakteer.$inferSelect;
 export type NewRiwayatTrakteer = typeof riwayatTrakteer.$inferInsert;
+
+/**
+ * Tabel tren kualitas udara per jam (3 hari terakhir) untuk grafik.
+ */
+export const trenUdara = pgTable(
+  "tren_udara",
+  {
+    id: serial("id").primaryKey(),
+    observedAt: timestamp("observed_at", { mode: "date" }).notNull(),
+    pm25: real("pm25").notNull(),
+    pm10: real("pm10").notNull(),
+    usAqi: integer("us_aqi").notNull(),
+    source: varchar("source", { length: 60 }).notNull().default("cams"),
+  },
+  (t) => [unique("tren_udara_observed_at_source_unique").on(t.observedAt, t.source)]
+);
+
+export type TrenUdara = typeof trenUdara.$inferSelect;
+export type NewTrenUdara = typeof trenUdara.$inferInsert;

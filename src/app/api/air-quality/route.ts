@@ -1,7 +1,11 @@
 import { NextRequest, NextResponse } from "next/server";
 import { rateLimitMock, sanitizeText } from "@/lib/security";
 import { computeComfort, computeIspu, categoryFromIspu } from "@/lib/air";
-import { getLatestStations, upsertStasiun } from "@/lib/airQuality";
+import {
+  getLatestStations,
+  upsertStasiun,
+  type StationSource,
+} from "@/lib/airQuality";
 
 export const dynamic = "force-dynamic";
 
@@ -52,6 +56,7 @@ interface StationBody {
   ispu?: unknown;      // opsional; dihitung otomatis bila tidak diberikan
   comfort_index?: unknown;
   status?: unknown;
+  source?: unknown;     // opsional: bmkg | cams | sensor
 }
 
 /**
@@ -126,6 +131,12 @@ export async function POST(request: NextRequest) {
     ? rec.status
     : categoryFromIspu(ispu).label;
 
+  const validSources: StationSource[] = ["bmkg", "cams", "sensor"];
+  const source =
+    typeof rec.source === "string" && validSources.includes(rec.source as StationSource)
+      ? (rec.source as StationSource)
+      : "sensor";
+
   try {
     const row = await upsertStasiun({
       location,
@@ -138,6 +149,7 @@ export async function POST(request: NextRequest) {
       status,
       temperature: temperature!,
       humidity: humidity!,
+      source,
     });
     return NextResponse.json({ ok: true, data: row }, { status: 201, headers: secureHeaders });
   } catch (err) {

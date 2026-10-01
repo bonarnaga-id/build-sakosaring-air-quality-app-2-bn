@@ -22,7 +22,25 @@ interface Station {
   status: string;
   temperature: number;
   humidity: number;
+  source?: SourceCode;
+  distance_km?: number | null;
+  observed_at?: string | null;
   recorded_at?: string;
+}
+
+type SourceCode = "bmkg" | "cams" | "sensor";
+
+const SOURCE_META: Record<SourceCode, { label: string; badge: string; dot: string; short: string }> = {
+  bmkg: { label: "BMKG (stasiun fisik)", short: "BMKG", badge: "bg-sky-100 text-sky-700", dot: "bg-sky-500" },
+  cams: { label: "CAMS Global (satelit)", short: "CAMS", badge: "bg-violet-100 text-violet-700", dot: "bg-violet-500" },
+  sensor: { label: "Sensor komunitas", short: "Sensor", badge: "bg-emerald-100 text-emerald-700", dot: "bg-emerald-500" },
+};
+
+interface TrenPoint {
+  observed_at: string;
+  pm25: number;
+  pm10: number;
+  us_aqi: number;
 }
 
 interface Metric {
@@ -40,6 +58,7 @@ export default function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [lastUpdate, setLastUpdate] = useState<string | null>(null);
+  const [tren, setTren] = useState<TrenPoint[]>([]);
 
   const applyStations = useCallback((raw: Array<Station | Record<string, unknown>>) => {
     const data: Station[] = raw.map((d) => ({
@@ -83,11 +102,24 @@ export default function Dashboard() {
     }
   }, [applyStations]);
 
+  const loadTren = useCallback(async () => {
+    try {
+      const res = await fetch("/api/air-quality/tren", { cache: "no-store" });
+      if (!res.ok) return;
+      const json = await res.json();
+      if (json.ok && Array.isArray(json.data)) setTren(json.data);
+    } catch {
+      // grafik bersifat pelengkap; diam-diam diabaikan bila gagal
+    }
+  }, []);
+
   useEffect(() => {
     void (async () => {
       await load();
+      void loadTren();
     })();
     const t = setInterval(load, 60_000); // fallback polling tiap menit
+    const tt = setInterval(loadTren, 5 * 60_000); // tren tiap 5 menit
     const es = new EventSource("/api/air-quality/stream");
     es.onmessage = (e) => {
       let parsed: { ok?: boolean; data?: Array<Station> };
@@ -105,9 +137,10 @@ export default function Dashboard() {
     es.onerror = () => {};
     return () => {
       clearInterval(t);
+      clearInterval(tt);
       es.close();
     };
-  }, [load, applyStations]);
+  }, [load, loadTren, applyStations]);
 
   if (loading && !selected) {
     return (
@@ -188,20 +221,49 @@ export default function Dashboard() {
           {stations.map((s) => {
             const sc = categoryFromIspu(s.ispu);
             const active = selected.id === s.id;
+            const src = SOURCE_META[s.source ?? "sensor"];
             return (
               <button
                 key={s.id}
                 onClick={() => setSelected(s)}
-                className={`rounded-full px-4 py-2 text-sm font-medium transition ${
+                aria-label={`${src.label} — ${s.location}${s.distance_km != null ? `, ${s.distance_km} km` : ""}`}
+                className={`flex items-center gap-2 rounded-full px-4 py-2 text-sm font-medium transition ${
                   active
                     ? `${sc.badgeBg} text-white shadow-md`
                     : "bg-white text-slate-600 ring-1 ring-slate-200 hover:ring-emerald-300"
                 }`}
               >
+                <span
+                  className={`h-2 w-2 rounded-full ${
+                    active ? "bg-white" : src.dot
+                  }`}
+                  aria-hidden="true"
+                />
                 {s.location}
+                {s.distance_km != null && (
+                  <span className="opacity-70">· {s.distance_km} km</span>
+                )}
               </button>
             );
           })}
+        </div>
+      )}
+
+      {/* Legenda asal sumber data */}
+      {stations.length > 0 && (
+        <div className="flex flex-wrap items-center gap-3 text-xs text-slate-500">
+          <span className="font-medium">Asal data:</span>
+          {Object.entries(SOURCE_META).map(([code, meta]) => {
+            const ada = stations.some((s) => (s.source ?? "sensor") === code);
+            if (!ada) return null;
+            return (
+              <span key={code} className="inline-flex items-center gap-1.5">
+                <span className={`h-2 w-2 rounded-full ${meta.dot}`} />
+                {meta.short}
+              </span>
+            );
+          })}
+          <span className="text-slate-400">· pembanding antar sumber, bukan satu sumber</span>
         </div>
       )}
 
@@ -222,8 +284,25 @@ export default function Dashboard() {
               <span className={`inline-flex items-center gap-1 rounded-full ${cat.badgeBg} px-3 py-1 text-sm font-semibold text-white`}>
                 {cat.emoji} {cat.label}
               </span>
+              {selected.source && (
+                <span className={`inline-flex items-center gap-1 rounded-full px-2.5 py-1 text-xs font-medium ${SOURCE_META[selected.source].badge}`}>
+                  <span className={`h-1.5 w-1.5 rounded-full ${SOURCE_META[selected.source].dot}`} />
+                  {SOURCE_META[selected.source].short}
+                </span>
+              )}
               <span className="text-sm text-slate-500">· {selected.location}</span>
             </div>
+            {selected.observed_at && (
+              <p className="mt-1.5 text-xs text-slate-400">
+                Pengamatan {new Date(selected.observed_at).toLocaleString("id-ID", {
+                  day: "numeric",
+                  month: "short",
+                  hour: "2-digit",
+                  minute: "2-digit",
+                })} WIB
+                {selected.distance_km != null ? ` · ${selected.distance_km} km dari Sako` : ""}
+              </p>
+            )}
           </div>
           <div className="text-left">
             <p className="text-sm font-medium text-slate-600">
@@ -256,6 +335,9 @@ export default function Dashboard() {
         </div>
       </div>
 
+      {/* Grafik tren 3 hari */}
+      {tren.length > 1 && <TrenChart points={tren} />}
+
       {/* Rekomendasi kesehatan */}
       <div className="rounded-3xl bg-white p-6 shadow-sm">
         <div className="flex items-center gap-3">
@@ -271,6 +353,71 @@ export default function Dashboard() {
         </ul>
       </div>
     </section>
+  );
+}
+
+function TrenChart({ points }: { points: TrenPoint[] }) {
+  const W = 100;
+  const H = 34;
+  const maxAqi = Math.max(50, ...points.map((p) => p.us_aqi));
+  const maxPm = Math.max(20, ...points.map((p) => p.pm25));
+
+  const path = (vals: number[], max: number) =>
+    vals
+      .map((v, i) => {
+        const x = (i / (vals.length - 1)) * W;
+        const y = H - (Math.min(v, max) / max) * H;
+        return `${i === 0 ? "M" : "L"}${x.toFixed(2)},${y.toFixed(2)}`;
+      })
+      .join(" ");
+
+  const last = points[points.length - 1];
+  const first = points[0];
+  const selisih = last.us_aqi - first.us_aqi;
+
+  return (
+    <div className="rounded-3xl bg-white p-6 shadow-sm">
+      <div className="flex flex-col gap-1 sm:flex-row sm:items-center sm:justify-between">
+        <div>
+          <h3 className="text-lg font-bold text-slate-800">Tren 3 Hari Terakhir</h3>
+          <p className="text-xs text-slate-500">
+            US EPA AQI &amp; PM2.5 per jam · CAMS Global (satelit)
+          </p>
+        </div>
+        <span
+          className={`text-sm font-semibold ${
+            selisih > 0 ? "text-red-600" : selisih < 0 ? "text-green-600" : "text-slate-500"
+          }`}
+        >
+          {selisih > 0 ? "▲" : selisih < 0 ? "▼" : "—"} {Math.abs(selisih)} poin
+        </span>
+      </div>
+
+      <div className="mt-4 flex gap-4 text-xs">
+        <span className="inline-flex items-center gap-1.5 text-slate-600">
+          <span className="h-2 w-6 rounded-full bg-violet-500" /> US AQI
+        </span>
+        <span className="inline-flex items-center gap-1.5 text-slate-600">
+          <span className="h-2 w-6 rounded-full bg-emerald-500" /> PM2.5 (µg/m³)
+        </span>
+      </div>
+
+      <svg
+        viewBox={`0 0 ${W} ${H}`}
+        preserveAspectRatio="none"
+        className="mt-2 h-40 w-full"
+        role="img"
+        aria-label="Grafik tren kualitas udara 3 hari terakhir"
+      >
+        <path d={path(points.map((p) => p.us_aqi), maxAqi)} fill="none" stroke="#8b5cf6" strokeWidth={0.7} />
+        <path d={path(points.map((p) => p.pm25), maxPm)} fill="none" stroke="#10b981" strokeWidth={0.7} />
+      </svg>
+
+      <div className="mt-1 flex justify-between text-[10px] text-slate-400">
+        <span>{new Date(first.observed_at).toLocaleDateString("id-ID", { day: "numeric", month: "short" })}</span>
+        <span>{new Date(last.observed_at).toLocaleString("id-ID", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" })}</span>
+      </div>
+    </div>
   );
 }
 
